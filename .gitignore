@@ -1,0 +1,9 @@
+.DS_Store
+.ipynb_checkpoints/
+__pycache__/
+
+project/cache/
+project/houston_walk_graph.graphml
+project/artifacts/
+project/route_gnn.gpx
+project/route_gnn.kml
