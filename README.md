@@ -19,12 +19,16 @@ The notebook is self-contained. It bootstraps Python packages, clones/copies rep
 
 No Google Drive mount is required. The notebook clones this repository, copies `artifacts/` and `cache/`, and runs the default full profile.
 
+The full-page map cells create a public browser URL by default. The notebook tries Cloudflare Quick Tunnel first and downloads `cloudflared` into the runtime if the binary is not already available.
+
 ### Local Jupyter
 
 1. Open `routedoodle_gnn_v2.ipynb` in any local Jupyter kernel.
 2. Run all cells.
 
 The notebook installs missing Python packages into the active kernel by default. If root-level assets are missing, it clones `https://github.com/sajpatel15/comp_559.git` into `.routedoodle_prebuilt_repo/` and copies `artifacts/` and `cache/` into the runtime.
+
+Remote Jupyter/GPU hosts use the same path as Colab: assets are cloned locally, and the map launcher publishes a public tunnel URL unless you override `ROUTEDOODLE_TUNNEL`.
 
 An optional reproducible environment file is included:
 
@@ -93,6 +97,11 @@ Large assets are tracked through Git LFS via `.gitattributes`.
 - `ROUTEDOODLE_FORCE_REBUILD_DATASET`
 - `ROUTEDOODLE_FORCE_REBUILD_PYG`
 - `ROUTEDOODLE_FORCE_REBUILD_CHECKPOINT`
+- `ROUTEDOODLE_TUNNEL`: public URL provider, default `auto`; supported values include `cloudflared`, `ngrok`, and `local`
+- `ROUTEDOODLE_PUBLIC_URL`: use an already-published reverse proxy URL instead of creating a tunnel
+- `ROUTEDOODLE_AUTO_INSTALL_TUNNEL`: download/install missing tunnel helpers into the runtime, default `1`
+- `ROUTEDOODLE_CLOUDFLARED_BIN`: path to an existing `cloudflared` binary
+- `ROUTEDOODLE_NGROK_AUTHTOKEN` or `NGROK_AUTHTOKEN`: required when forcing `ROUTEDOODLE_TUNNEL=ngrok`
 
 ## Repository Layout
 

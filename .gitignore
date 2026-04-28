@@ -4,6 +4,7 @@ __pycache__/
 .matplotlib-cache/
 .runtime-cache/
 .routedoodle_prebuilt_repo/
+.routedoodle_tunnel_bin/
 prebuilt_repo/
 outputs/
 route_gnn_v3.gpx

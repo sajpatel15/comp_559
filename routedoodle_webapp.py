@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import math
 import os
+import platform
 import re
 import shutil
 import socket
 import subprocess
 import sys
+import stat
+import tarfile
 import threading
 import time
 import traceback
@@ -16,6 +19,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
+from urllib.request import urlopen
 
 
 DEFAULT_PORT = 8765
@@ -658,19 +662,22 @@ def get_accessible_url(
     namespace: dict[str, Any] | None = None,
     in_colab: bool = False,
     prefer_public: bool = True,
+    require_public: bool = False,
     cache_key: str | None = None,
 ) -> PublishedRouteDoodleURL:
     """Return the best browser URL for a kernel-hosted web app.
 
-    Public sharing is config-driven. Set ROUTEDOODLE_TUNNEL=ngrok,
-    ROUTEDOODLE_TUNNEL=cloudflared, or ROUTEDOODLE_TUNNEL=auto to use a public
-    tunnel. When ROUTEDOODLE_TUNNEL is unset, Colab uses its built-in proxy
-    instead of trying public tunnels that can block notebook output.
+    Public sharing is the default for notebook/remote runs. Cloudflare Quick
+    Tunnel is tried first because it does not require an account token. Set
+    ROUTEDOODLE_TUNNEL=ngrok to require ngrok, ROUTEDOODLE_TUNNEL=local to skip
+    public sharing, or ROUTEDOODLE_PUBLIC_URL to provide an existing URL.
     """
     cache_key = cache_key or f"_routedoodle_published_url_{app.port}"
     if namespace is not None:
         existing = namespace.get(cache_key)
-        if isinstance(existing, PublishedRouteDoodleURL):
+        if isinstance(existing, PublishedRouteDoodleURL) and (
+            not require_public or existing.mode not in {"local", "colab-proxy"}
+        ):
             return existing
 
     explicit_url = _explicit_public_url(app.port)
@@ -683,27 +690,35 @@ def get_accessible_url(
 
     requested_tunnel = os.environ.get("ROUTEDOODLE_TUNNEL")
     if requested_tunnel is None:
-        tunnel_pref = "none" if in_colab else ("auto" if prefer_public else "none")
+        tunnel_pref = "auto" if (prefer_public or require_public) else "none"
     else:
         tunnel_pref = requested_tunnel.strip().lower()
     if tunnel_pref in {"public", "share"}:
         tunnel_pref = "auto"
 
+    if require_public and tunnel_pref in {"", "0", "false", "no", "none", "local", "colab", "proxy"}:
+        raise RuntimeError(
+            "A public RouteDoodle URL is required, but ROUTEDOODLE_TUNNEL disables public tunnels. "
+            "Unset ROUTEDOODLE_TUNNEL or set it to 'cloudflared', 'ngrok', or 'auto'."
+        )
+
     if tunnel_pref not in {"", "0", "false", "no", "none", "local", "colab", "proxy"}:
         errors: list[str] = []
-        providers = ["ngrok", "cloudflared"] if tunnel_pref == "auto" else [tunnel_pref]
+        providers = ["cloudflared", "ngrok"] if tunnel_pref == "auto" else [tunnel_pref]
         for provider in providers:
             try:
+                _tunnel_status(f"Trying public tunnel provider: {provider}")
                 published = _start_public_tunnel(provider, app, namespace, cache_key)
             except Exception as exc:
                 errors.append(f"{provider}: {exc}")
                 continue
             if published:
                 return _remember_published_url(published, namespace, cache_key)
+            errors.append(f"{provider}: unavailable")
 
-        if tunnel_pref != "auto":
+        if require_public or tunnel_pref != "auto":
             raise RuntimeError(
-                f"ROUTEDOODLE_TUNNEL={tunnel_pref!r} was requested, but no tunnel could be started. "
+                f"Could not create a public RouteDoodle URL with ROUTEDOODLE_TUNNEL={tunnel_pref!r}. "
                 + " | ".join(errors)
             )
 
@@ -767,16 +782,19 @@ def _start_pyngrok_tunnel(
     namespace: dict[str, Any] | None,
     cache_key: str,
 ) -> PublishedRouteDoodleURL | None:
+    token = os.environ.get("ROUTEDOODLE_NGROK_AUTHTOKEN") or os.environ.get("NGROK_AUTHTOKEN")
+    if not token and not _env_flag("ROUTEDOODLE_ALLOW_NGROK_WITHOUT_TOKEN", False):
+        raise RuntimeError("ngrok requires ROUTEDOODLE_NGROK_AUTHTOKEN or NGROK_AUTHTOKEN")
+
     try:
         from pyngrok import ngrok
     except ImportError:
-        has_ngrok_token = bool(os.environ.get("ROUTEDOODLE_NGROK_AUTHTOKEN") or os.environ.get("NGROK_AUTHTOKEN"))
-        if not _env_flag("ROUTEDOODLE_AUTO_INSTALL_TUNNEL", has_ngrok_token):
+        if not _env_flag("ROUTEDOODLE_AUTO_INSTALL_TUNNEL", True):
             return None
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pyngrok"])
+        _tunnel_status("Installing pyngrok for public tunnel support ...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pyngrok"], timeout=120)
         from pyngrok import ngrok
 
-    token = os.environ.get("ROUTEDOODLE_NGROK_AUTHTOKEN") or os.environ.get("NGROK_AUTHTOKEN")
     if token:
         ngrok.set_auth_token(token)
 
@@ -796,7 +814,7 @@ def _start_cloudflared_tunnel(
     namespace: dict[str, Any] | None,
     cache_key: str,
 ) -> PublishedRouteDoodleURL | None:
-    cloudflared_bin = os.environ.get("ROUTEDOODLE_CLOUDFLARED_BIN") or shutil.which("cloudflared")
+    cloudflared_bin = _resolve_cloudflared_bin()
     if not cloudflared_bin:
         return None
 
@@ -825,7 +843,8 @@ def _start_cloudflared_tunnel(
     reader.start()
 
     pattern = re.compile(r"https://[-a-zA-Z0-9.]+\.trycloudflare\.com")
-    deadline = time.time() + 25
+    timeout_s = float(os.environ.get("ROUTEDOODLE_TUNNEL_START_TIMEOUT", "45"))
+    deadline = time.time() + timeout_s
     while time.time() < deadline:
         if proc.poll() is not None:
             raise RuntimeError("cloudflared exited before a tunnel URL was created: " + "".join(lines[-8:]))
@@ -845,6 +864,101 @@ def _start_cloudflared_tunnel(
 
     proc.terminate()
     raise TimeoutError("Timed out waiting for cloudflared to report a trycloudflare.com URL")
+
+
+def _resolve_cloudflared_bin() -> str | None:
+    configured = os.environ.get("ROUTEDOODLE_CLOUDFLARED_BIN")
+    if configured:
+        return configured
+
+    existing = shutil.which("cloudflared")
+    if existing:
+        return existing
+
+    if not _env_flag("ROUTEDOODLE_AUTO_INSTALL_TUNNEL", True):
+        return None
+
+    download = _cloudflared_download()
+    if download is None:
+        return None
+
+    url, archive_name = download
+    install_dir = os.environ.get(
+        "ROUTEDOODLE_TUNNEL_BIN_DIR",
+        os.path.join(os.getcwd(), ".routedoodle_tunnel_bin"),
+    )
+    os.makedirs(install_dir, exist_ok=True)
+
+    binary_name = "cloudflared.exe" if platform.system().lower() == "windows" else "cloudflared"
+    binary_path = os.path.join(install_dir, binary_name)
+    if os.path.exists(binary_path):
+        return binary_path
+
+    download_path = os.path.join(install_dir, archive_name)
+    _tunnel_status("Downloading cloudflared for public URL support ...")
+    with urlopen(url, timeout=float(os.environ.get("ROUTEDOODLE_TUNNEL_DOWNLOAD_TIMEOUT", "90"))) as response:
+        with open(download_path, "wb") as fh:
+            shutil.copyfileobj(response, fh)
+
+    if archive_name.endswith(".tgz"):
+        extract_dir = os.path.join(install_dir, "cloudflared_extract")
+        os.makedirs(extract_dir, exist_ok=True)
+        with tarfile.open(download_path, "r:gz") as archive:
+            _safe_extract_tar(archive, extract_dir)
+        extracted = _find_cloudflared_binary(extract_dir)
+        if extracted is None:
+            raise RuntimeError("Downloaded cloudflared archive did not contain a cloudflared binary")
+        shutil.copy2(extracted, binary_path)
+    else:
+        shutil.move(download_path, binary_path)
+
+    if platform.system().lower() != "windows":
+        os.chmod(binary_path, os.stat(binary_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return binary_path
+
+
+def _cloudflared_download() -> tuple[str, str] | None:
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"}:
+        arch = "amd64"
+    elif machine in {"aarch64", "arm64"}:
+        arch = "arm64"
+    else:
+        return None
+
+    base = "https://github.com/cloudflare/cloudflared/releases/latest/download"
+    if system == "linux":
+        name = f"cloudflared-linux-{arch}"
+    elif system == "darwin":
+        name = f"cloudflared-darwin-{arch}.tgz"
+    elif system == "windows" and arch == "amd64":
+        name = "cloudflared-windows-amd64.exe"
+    else:
+        return None
+    return f"{base}/{name}", name
+
+
+def _find_cloudflared_binary(root: str) -> str | None:
+    for dirpath, _, filenames in os.walk(root):
+        for filename in filenames:
+            if filename == "cloudflared" or filename == "cloudflared.exe":
+                return os.path.join(dirpath, filename)
+    return None
+
+
+def _safe_extract_tar(archive: tarfile.TarFile, destination: str) -> None:
+    dest_abs = os.path.abspath(destination)
+    for member in archive.getmembers():
+        target = os.path.abspath(os.path.join(destination, member.name))
+        if target != dest_abs and not target.startswith(dest_abs + os.sep):
+            raise RuntimeError(f"Refusing to extract unsafe archive member: {member.name}")
+    archive.extractall(destination)
+
+
+def _tunnel_status(message: str) -> None:
+    if _env_flag("ROUTEDOODLE_TUNNEL_VERBOSE", True):
+        print(message, flush=True)
 
 
 def _env_flag(name: str, default: bool) -> bool:
