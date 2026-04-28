@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -900,6 +901,9 @@ def _route_payload(namespace: dict[str, Any], coords: list[tuple[float, float]],
         raise ValueError("Drawing too short after simplification")
 
     graph = namespace["extract_subgraph"](namespace["G_houston"], coords, padding_m=800)
+    if graph.number_of_nodes() == 0 or graph.number_of_edges() == 0:
+        raise ValueError("No walk-network subgraph was found around this drawing. Try drawing inside Houston.")
+
     routes: list[dict[str, Any]] = []
 
     if method in {"gnn", "both"}:
@@ -960,4 +964,6 @@ def _json_safe(value: Any) -> Any:
         return [_json_safe(item) for item in value]
     if hasattr(value, "item"):
         return _json_safe(value.item())
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
     return value
