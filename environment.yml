@@ -6,6 +6,8 @@ dependencies:
   - pip
   - jupyterlab
   - notebook
+  - nbclient
+  - nbconvert
   - ipykernel
   - jupyterlab_widgets
   - widgetsnbextension

@@ -1,2 +1,5 @@
-ML/artifacts/* filter=lfs diff=lfs merge=lfs -text
-ML/cache/* filter=lfs diff=lfs merge=lfs -text
+artifacts/*.csv filter=lfs diff=lfs merge=lfs -text
+artifacts/*.graphml filter=lfs diff=lfs merge=lfs -text
+artifacts/*.pkl filter=lfs diff=lfs merge=lfs -text
+artifacts/*.pt filter=lfs diff=lfs merge=lfs -text
+cache/*.json filter=lfs diff=lfs merge=lfs -text

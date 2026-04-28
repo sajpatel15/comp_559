@@ -1,9 +1,10 @@
 .DS_Store
 .ipynb_checkpoints/
 __pycache__/
-
-project/cache/
-project/houston_walk_graph.graphml
-project/artifacts/
-project/route_gnn.gpx
-project/route_gnn.kml
+.matplotlib-cache/
+.runtime-cache/
+.routedoodle_prebuilt_repo/
+prebuilt_repo/
+outputs/
+route_gnn_v3.gpx
+route_gnn_v3.kml
