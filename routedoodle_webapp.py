@@ -662,10 +662,10 @@ def get_accessible_url(
 ) -> PublishedRouteDoodleURL:
     """Return the best browser URL for a kernel-hosted web app.
 
-    Public sharing is opt-in/config-driven. Set ROUTEDOODLE_TUNNEL=ngrok or
-    ROUTEDOODLE_TUNNEL=cloudflared to require a public tunnel. With the default
-    ROUTEDOODLE_TUNNEL=auto, installed/configured tunnel providers are tried
-    first, then Colab proxy/local URLs are used as fallbacks.
+    Public sharing is config-driven. Set ROUTEDOODLE_TUNNEL=ngrok,
+    ROUTEDOODLE_TUNNEL=cloudflared, or ROUTEDOODLE_TUNNEL=auto to use a public
+    tunnel. When ROUTEDOODLE_TUNNEL is unset, Colab uses its built-in proxy
+    instead of trying public tunnels that can block notebook output.
     """
     cache_key = cache_key or f"_routedoodle_published_url_{app.port}"
     if namespace is not None:
@@ -681,7 +681,11 @@ def get_accessible_url(
             cache_key,
         )
 
-    tunnel_pref = os.environ.get("ROUTEDOODLE_TUNNEL", "auto" if prefer_public else "none").strip().lower()
+    requested_tunnel = os.environ.get("ROUTEDOODLE_TUNNEL")
+    if requested_tunnel is None:
+        tunnel_pref = "none" if in_colab else ("auto" if prefer_public else "none")
+    else:
+        tunnel_pref = requested_tunnel.strip().lower()
     if tunnel_pref in {"public", "share"}:
         tunnel_pref = "auto"
 
