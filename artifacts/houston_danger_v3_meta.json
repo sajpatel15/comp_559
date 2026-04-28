@@ -1,0 +1,18 @@
+{
+  "artifact_version": "v3_ordered_safety",
+  "crime_radius_m": 75.0,
+  "crime_score_norm_p95": 7.126108169555664,
+  "crime_weights": {
+    "Aggravated Assault": 1.0,
+    "Robbery": 0.9,
+    "Weapon law violations": 0.6
+  },
+  "danger_buffer_m": 10.0,
+  "danger_crimes": [
+    "Aggravated Assault",
+    "Robbery",
+    "Weapon law violations"
+  ],
+  "elapsed_sec": 1156.3,
+  "n_edges": 781524
+}

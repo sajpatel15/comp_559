@@ -17,7 +17,7 @@ The notebook is self-contained. It bootstraps Python packages, clones/copies rep
 1. Open `routedoodle_gnn_v2.ipynb` in Colab.
 2. Choose `Runtime > Run all`.
 
-No Google Drive mount is required. The notebook clones this repository, copies `artifacts/` and `cache/`, and runs the default smoke profile.
+No Google Drive mount is required. The notebook clones this repository, copies `artifacts/` and `cache/`, and runs the default full profile.
 
 ### Local Jupyter
 
@@ -38,20 +38,21 @@ This environment is convenient but not required by the submission workflow.
 
 ## Run Profiles
 
-The default is the fast grading profile:
+The default is the full project run:
 
-- `ROUTEDOODLE_RUN_PROFILE=smoke`
-- 16 synthetic samples
-- 1 training epoch if no compatible checkpoint is present
-- static full-network plots disabled
+- `ROUTEDOODLE_RUN_PROFILE=full`
+- 1,000 synthetic samples via the prebuilt PyG dataset cache
+- compatible RouteGAT checkpoint restored from `artifacts/routegat_v3_full.pt`
+- crime-aware safety graph restored from `artifacts/houston_danger_v3.pkl`
+- static full-network plots disabled by default to keep Colab noninteractive
 
-For the larger experiment:
+For a quick debugging run:
 
 ```bash
-ROUTEDOODLE_RUN_PROFILE=full jupyter lab
+ROUTEDOODLE_RUN_PROFILE=smoke jupyter lab
 ```
 
-Use the full profile only when full prebuilt artifacts are available.
+The smoke profile is useful for fast local testing, but the submitted notebook runs the full profile unless overridden.
 
 ## Assets And Reproducibility
 
@@ -59,18 +60,21 @@ Minimum artifact expected in the repo:
 
 - `artifacts/houston_walk_graph.graphml`
 
-Recommended cached smoke artifacts:
+Required full-profile artifacts for the default noninteractive run:
+
+- `artifacts/NIBRSPublicView2025.csv`
+- `artifacts/houston_danger_v3.pkl`
+- `artifacts/houston_danger_v3_meta.json`
+- `artifacts/pyg_dataset_v3_full.pkl`
+- `artifacts/pyg_dataset_v3_full_meta.json`
+- `artifacts/routegat_v3_full.pt`
+
+Optional smoke artifacts:
 
 - `artifacts/dataset_raw_v3_smoke.pkl`
 - `artifacts/pyg_dataset_v3_smoke.pkl`
 - `artifacts/pyg_dataset_v3_smoke_meta.json`
 - `artifacts/routegat_v3_smoke.pt`
-
-Optional safety artifacts:
-
-- `artifacts/NIBRSPublicView2025.csv`
-- `artifacts/houston_danger_v3.pkl`
-- `artifacts/houston_danger_v3_meta.json`
 
 If the NIBRS crime CSV and prebuilt safety graph are unavailable, the notebook still runs end-to-end with zero-valued safety features. That fallback preserves reproducibility for reviewers while clearly reporting that crime-aware scoring is disabled.
 
