@@ -1,0 +1,23 @@
+name: comp559
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - jupyterlab
+  - notebook
+  - ipykernel
+  - jupyterlab_widgets
+  - widgetsnbextension
+  - numpy
+  - matplotlib
+  - networkx
+  - osmnx
+  - shapely
+  - scikit-learn
+  - folium
+  - ipyleaflet
+  - ipywidgets
+  - pip:
+      - torch
+      - torch-geometric
