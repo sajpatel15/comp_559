@@ -419,6 +419,20 @@ INDEX_HTML = r"""<!doctype html>
       return `${(100 * Number(value || 0)).toFixed(1)}%`;
     }
 
+    function formatMeters(value) {
+      const numeric = Number(value || 0);
+      return numeric >= 100 ? `${numeric.toFixed(0)} m` : `${numeric.toFixed(1)} m`;
+    }
+
+    function formatPoints(route) {
+      const count = Number(route.point_count || 0);
+      const target = Number(route.target_points || 0);
+      if (!target) return `${count} pts`;
+      const delta = count - target;
+      const suffix = delta === 0 ? `target ${target}` : `target ${target}, ${delta > 0 ? "+" : ""}${delta}`;
+      return `${count} pts (${suffix})`;
+    }
+
     function renderResult(route) {
       const stats = route.stats || {};
       const item = document.createElement("section");
@@ -427,6 +441,8 @@ INDEX_HTML = r"""<!doctype html>
         <h2><span style="color:${routeColor(route)}">${route.name}</span><span>${Number(route.km || 0).toFixed(2)} km</span></h2>
         <div class="metric-grid">
           <div class="metric"><span>Time</span>${Number(route.seconds || 0).toFixed(2)} s</div>
+          <div class="metric"><span>Points</span>${formatPoints(route)}</div>
+          <div class="metric"><span>Fit</span>${formatPct(route.coverage_frac)} | ${formatMeters(route.shape_error_m)}</div>
           <div class="metric"><span>Crime</span>${Number(stats.crime_avg || 0).toFixed(4)}</div>
           <div class="metric"><span>Danger</span>${Number(stats.danger_avg || 0).toFixed(4)}</div>
           <div class="metric"><span>Exposed</span>${formatPct(stats.exposed_frac)}</div>
@@ -465,7 +481,8 @@ INDEX_HTML = r"""<!doctype html>
         if (layers.length) {
           const bounds = routeLayer.getBounds();
           if (bounds.isValid()) map.fitBounds(bounds.pad(0.12));
-          setStatus(`Done. ${payload.simplified_points} simplified doodle points, ${payload.subgraph.nodes} nodes, ${payload.subgraph.edges} edges.`, "success");
+          const routeCounts = payload.routes.map((route) => `${route.name}: ${Number(route.point_count || 0)} pts, ${formatPct(route.coverage_frac)} fit`).join(", ");
+          setStatus(`Done. Target ${payload.target_points || payload.simplified_points} pts. ${routeCounts}. ${payload.subgraph.nodes} nodes, ${payload.subgraph.edges} edges.`, "success");
         } else {
           setStatus("No route was returned.", "error");
         }
@@ -852,11 +869,18 @@ def _start_cloudflared_tunnel(
         for line in lines:
             match = pattern.search(line)
             if match:
+                public_url = match.group(0).rstrip("/") + "/"
+                if _env_flag("ROUTEDOODLE_VERIFY_PUBLIC_URL", False):
+                    try:
+                        _wait_for_public_url_ready(public_url, proc=proc, lines=lines)
+                    except Exception:
+                        proc.terminate()
+                        raise
                 if namespace is not None:
                     namespace[f"{cache_key}_cloudflared_proc"] = proc
                     namespace[f"{cache_key}_cloudflared_reader"] = reader
                 return PublishedRouteDoodleURL(
-                    match.group(0).rstrip("/") + "/",
+                    public_url,
                     "cloudflared",
                     "Public tunnel. Anyone with the URL can reach this notebook-backed app while the tunnel is running.",
                 )
@@ -864,6 +888,39 @@ def _start_cloudflared_tunnel(
 
     proc.terminate()
     raise TimeoutError("Timed out waiting for cloudflared to report a trycloudflare.com URL")
+
+
+def _wait_for_public_url_ready(
+    url: str,
+    proc: subprocess.Popen[str] | None = None,
+    lines: list[str] | None = None,
+    timeout_s: float | None = None,
+) -> None:
+    """Wait until the public URL resolves and reaches this app's health endpoint."""
+    timeout_s = float(timeout_s if timeout_s is not None else os.environ.get("ROUTEDOODLE_PUBLIC_READY_TIMEOUT", "75"))
+    health_url = url.rstrip("/") + "/health"
+    deadline = time.time() + timeout_s
+    last_error = "not checked yet"
+    while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            tail = "".join((lines or [])[-8:])
+            raise RuntimeError(
+                "cloudflared exited before the public URL became reachable. "
+                f"Last readiness error: {last_error}. " + tail
+            )
+        try:
+            with urlopen(health_url, timeout=5) as response:
+                if response.status == 200:
+                    payload = response.read(1024).decode("utf-8", errors="replace")
+                    if '"ok": true' in payload or '"ok":true' in payload:
+                        return
+                    last_error = f"unexpected /health response: {payload[:160]}"
+                else:
+                    last_error = f"HTTP {response.status}"
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(0.75)
+    raise TimeoutError(f"Public URL did not become reachable within {timeout_s:.0f}s: {health_url}. Last error: {last_error}")
 
 
 def _resolve_cloudflared_bin() -> str | None:
@@ -1013,10 +1070,13 @@ def _route_payload(namespace: dict[str, Any], coords: list[tuple[float, float]],
     _require(namespace, "G_houston")
     _require(namespace, "route_km")
     _require(namespace, "route_safety_stats")
+    _require(namespace, "route_shape_point_count")
+    _require(namespace, "bidirectional_shape_error_m")
 
     simplified = namespace["rdp_simplify"](coords, eps_m=20.0)
     if len(simplified) < 2:
         raise ValueError("Drawing too short after simplification")
+    target_points = len(simplified)
 
     graph = namespace["extract_subgraph"](namespace["G_houston"], coords, padding_m=800)
     if graph.number_of_nodes() == 0 or graph.number_of_edges() == 0:
@@ -1025,25 +1085,26 @@ def _route_payload(namespace: dict[str, Any], coords: list[tuple[float, float]],
     routes: list[dict[str, Any]] = []
 
     if method in {"gnn", "both"}:
-        _require(namespace, "gnn_neural_impedance_route")
+        _require(namespace, "point_aware_gnn_route")
         _require(namespace, "model")
         start = time.time()
-        route_coords = namespace["gnn_neural_impedance_route"](namespace["model"], graph, simplified)
-        if route_coords:
-            routes.append(_route_result(namespace, graph, route_coords, "GNN v3", "#E84545", start))
+        route_info = namespace["point_aware_gnn_route"](namespace["model"], graph, simplified, target_points=target_points)
+        if route_info and route_info.get("coords"):
+            routes.append(_route_result(namespace, graph, route_info, "GNN v3", "#E84545", start, target_points, simplified))
 
     if method in {"dijkstra", "both"}:
-        _require(namespace, "dijkstra_route")
+        _require(namespace, "point_aware_dijkstra_route")
         start = time.time()
-        route_coords = namespace["dijkstra_route"](graph, simplified)
-        if route_coords:
-            routes.append(_route_result(namespace, graph, route_coords, "Dijkstra", "#27ae60", start))
+        route_info = namespace["point_aware_dijkstra_route"](graph, simplified, target_points=target_points)
+        if route_info and route_info.get("coords"):
+            routes.append(_route_result(namespace, graph, route_info, "Dijkstra", "#27ae60", start, target_points, simplified))
 
     return {
         "run_profile": namespace.get("RUN_PROFILE"),
         "artifact_version": namespace.get("ARTIFACT_VERSION"),
         "input_points": len(coords),
         "simplified_points": len(simplified),
+        "target_points": target_points,
         "subgraph": {
             "nodes": graph.number_of_nodes(),
             "edges": graph.number_of_edges(),
@@ -1055,11 +1116,22 @@ def _route_payload(namespace: dict[str, Any], coords: list[tuple[float, float]],
 def _route_result(
     namespace: dict[str, Any],
     graph: Any,
-    route_coords: list[tuple[float, float]],
+    route_info: dict[str, Any],
     name: str,
     color: str,
     start_time: float,
+    target_points: int,
+    doodle_coords: list[tuple[float, float]],
 ) -> dict[str, Any]:
+    route_coords = route_info.get("coords", [])
+    point_count = route_info.get("point_count")
+    if point_count is None:
+        point_count = namespace["route_shape_point_count"](route_coords)
+    point_count = int(point_count)
+    shape_error_m = route_info.get("shape_error_m")
+    if shape_error_m is None:
+        shape_error_m = namespace["bidirectional_shape_error_m"](route_coords, doodle_coords)
+    point_delta = max(0, point_count - target_points)
     return {
         "name": name,
         "color": color,
@@ -1067,6 +1139,16 @@ def _route_result(
         "km": float(namespace["route_km"](route_coords)),
         "seconds": time.time() - start_time,
         "stats": namespace["route_safety_stats"](graph, route_coords),
+        "target_points": int(target_points),
+        "point_count": point_count,
+        "point_delta": point_delta,
+        "below_target": bool(point_count < target_points),
+        "shape_error_m": float(shape_error_m),
+        "coverage_frac": float(route_info.get("coverage_frac", 0.0)),
+        "corner_error_m": float(route_info.get("corner_error_m", 0.0)),
+        "max_corridor_error_m": float(route_info.get("max_corridor_error_m", 0.0)),
+        "outside_corridor_m": float(route_info.get("outside_corridor_m", 0.0)),
+        "score_reason": str(route_info.get("score_reason", "")),
     }
 
 
