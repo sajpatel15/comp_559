@@ -250,6 +250,8 @@ routedoodle_gnn_v2.ipynb   # only notebook to run
 routedoodle_webapp.py      # web helper imported by the notebook
 README.md                  # project and run instructions
 environment.yml            # optional local environment
+final_report/report.pdf    # final project report
+call-for-projects.pdf      # course project prompt
 artifacts/                 # graph, datasets, checkpoints
 cache/                     # OSMnx request cache
 outputs/                   # generated GPX/KML and runtime outputs

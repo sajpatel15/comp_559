@@ -9,3 +9,12 @@ prebuilt_repo/
 outputs/
 route_gnn_v3.gpx
 route_gnn_v3.kml
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+final_report/rendered/
