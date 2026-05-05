@@ -191,7 +191,7 @@ Optional smoke artifacts:
 - `artifacts/pyg_dataset_v3_smoke_meta.json`
 - `artifacts/routegat_v3_smoke.pt`
 
-If root-level assets are missing, the notebook clones `https://github.com/sajpatel15/comp_559.git` into a prebuilt asset directory and copies `artifacts/` and `cache/` into the runtime. In Colab this directory is `/content/routedoodle_prebuilt_repo`; locally it is `.routedoodle_prebuilt_repo/`.
+The notebook checks usable local artifacts first. If the required cached-run artifacts are missing or are only Git LFS pointer files, it clones `https://github.com/sajpatel15/comp_559.git` into a prebuilt asset directory and copies `artifacts/` and `cache/` into the runtime. In Colab this directory is `/content/routedoodle_prebuilt_repo`; locally it is `.routedoodle_prebuilt_repo/`. If Git LFS preload fails, the notebook continues into its rebuild/download paths.
 
 If the NIBRS crime CSV and prebuilt safety graph are unavailable, the notebook still runs end-to-end with zero-valued safety features. That fallback preserves reproducibility while reporting that crime-aware scoring is disabled.
 
@@ -220,7 +220,7 @@ Large assets are tracked through Git LFS via `.gitattributes`.
 
 ### Asset clone appears stuck
 
-The clone step runs `git clone --depth 1` and then `git lfs pull`. The notebook captures subprocess output, so Git LFS progress may not stream to the notebook. Fresh Colab runtimes can take several minutes because the full artifacts are multiple gigabytes.
+The bootstrap checks local cache files first, then runs `git clone --depth 1` and `git lfs pull` only when the cached-run artifacts are incomplete. The notebook captures subprocess output, so Git LFS progress may not stream to the notebook. Fresh Colab runtimes can take several minutes because the full artifacts are multiple gigabytes. If Git LFS cannot provide the files, the notebook removes unusable pointer files and falls back to rebuilding/downloading what it needs.
 
 ### Web link does not appear
 
