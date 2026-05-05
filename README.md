@@ -2,11 +2,16 @@
 
 RouteDoodle turns a hand-drawn route shape into a valid walking or jogging route on the Houston street network. The project combines an ordered doodle encoder, PyTorch Geometric graph attention layers, edge-level safety features, and a neural-impedance routing step that keeps generated routes graph-valid.
 
+## Submission Links
+
+- Final notebook to run: [routedoodle_gnn_v2.ipynb](routedoodle_gnn_v2.ipynb)
+- Final report: [final_report/report.pdf](final_report/report.pdf)
+
 ## Start Here
 
 Run exactly one file:
 
-- `routedoodle_gnn_v2.ipynb`
+- [routedoodle_gnn_v2.ipynb](routedoodle_gnn_v2.ipynb)
 
 The notebook is the project entry point. It installs missing Python packages when allowed, clones and copies prebuilt assets when needed, loads or rebuilds caches, restores or trains the RouteGAT checkpoint, evaluates against Dijkstra, launches the browser map UI, and writes sample GPX/KML exports.
 
