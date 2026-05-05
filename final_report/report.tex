@@ -38,7 +38,7 @@
 \maketitle
 
 \begin{abstract}
-RouteDoodle converts a hand-drawn route shape into a connected walking route on the Houston street graph. The system treats intersections as nodes, walkable street segments as directed edges, and the user drawing as an ordered sequence of geographic points. RouteGAT v3 scores candidate graph edges from doodle geometry, street context, and crime-exposure features. A shortest-path solver then turns those scores into a graph-valid route, so the final output stays on real streets. On 15 validation doodles, GNN v3 matched Dijkstra closely on shape fit, with average Frechet distance of 105 m versus 104 m, while lowering average crime score from 0.0897 to 0.0841.
+RouteDoodle converts a hand-drawn route shape into a connected walking route on the Houston street graph. The system treats intersections as nodes, walkable street segments as directed edges, and the user drawing as an ordered sequence of geographic points. RouteGAT v3 scores candidate graph edges from doodle geometry, street context, and crime-exposure features. A shortest-path solver then turns those scores into a graph-valid route, so the final output stays on real streets. On 15 validation doodles, GNN v3 matched Dijkstra closely on shape fit, with average Frechet distance of 105 m versus 104 m, while lowering average crime score from 0.0897 to 0.0841. The repository with code, cached artifacts, report source, and run instructions is \url{https://github.com/sajpatel15/comp_559}.
 \end{abstract}
 
 \section{Introduction}
@@ -201,7 +201,7 @@ The third challenge was crime-exposure feature quality. Crime incidents are spat
 
 \section{Reproducibility and Conclusion}
 
-The public implementation is available at \url{https://github.com/sajpatel15/comp_559} at report commit \texttt{63f5b05}. The project has one required entry point, \texttt{routedoodle\_gnn\_v2.ipynb}. A full cached run uses \texttt{ROUTEDOODLE\_RUN\_PROFILE=full}, restores \texttt{houston\_walk\_graph.graphml}, \texttt{houston\_danger\_v3.pkl}, \texttt{pyg\_dataset\_v3\_full.pkl}, and \texttt{routegat\_v3\_full.pt}, launches the app on port 8765, and writes GPX and KML outputs under \texttt{outputs/}. The README gives the full Colab, Jupyter, public URL, cache, Git LFS, and rebuild instructions.
+The public implementation is available at \url{https://github.com/sajpatel15/comp_559}. The project has one required entry point, \texttt{routedoodle\_gnn\_v2.ipynb}. A full cached run uses \texttt{ROUTEDOODLE\_RUN\_PROFILE=full}, restores \texttt{houston\_walk\_graph.graphml}, \texttt{houston\_danger\_v3.pkl}, \texttt{pyg\_dataset\_v3\_full.pkl}, and \texttt{routegat\_v3\_full.pt}, launches the app on port 8765, and writes GPX and KML outputs under \texttt{outputs/}. The README gives the full Colab, Jupyter, public URL, cache, Git LFS, and rebuild instructions.
 
 RouteDoodle shows that an ordered sketch can be converted into a connected street-graph route while using graph learning to reshape route costs. The strongest evidence is graph validity, close shape fit, and lower validation crime score. The main limitation is attribution: future work should separate learned probability effects from hand-coded exposure penalties and evaluate on larger real-doodle test sets.
 
@@ -214,6 +214,10 @@ The team split ownership evenly across idea formation, prototype work, research,
 \section*{Acknowledgments}
 
 The implementation uses OpenStreetMap data through OSMnx, public incident categories from the FBI Crime Data Explorer, PyTorch Geometric for graph learning, and NetworkX for graph routing.
+
+\section*{AI Acknowledgment}
+
+We used OpenAI Codex with GPT-5 to support this project. We prompted the tool to help build and debug code, refine and iterate on design ideas, suggest implementation and evaluation improvements, and revise report wording for clarity and organization. The team reviewed, tested, and edited AI-supported output against the notebook, repository artifacts, compiled PDF, and project goals before including it in the submission. Transcript: No link available.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
